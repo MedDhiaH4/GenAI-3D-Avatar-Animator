@@ -47,7 +47,33 @@ loader.load(
         scene.add(model);
         
         console.log('Model loaded successfully!');
-        console.log('Your avatar object:', model);
+
+        // --- !!! ADD THIS NEW CODE BELOW !!! ---
+
+        console.log("--- AVATAR SKELETON BONE LIST ---");
+        
+        // We'll use an array to store the names for a clean list
+        const boneNames = []; 
+        
+        // The .traverse() method visits every object in the 3D model
+        model.traverse(function(object) {
+            // We check if the object is a 'Bone'
+            if (object.isBone) {
+                // If it is, we add its name to our list
+                boneNames.push(object.name);
+            }
+        });
+        
+        // Log the complete list to the console
+        console.log(boneNames);
+        
+        // We'll also log the full skeleton structure
+        // This is very useful for seeing the parent/child hierarchy
+        console.log("Full skeleton structure:", model.children);
+
+        console.log("-----------------------------------");
+        
+        // --- END OF NEW CODE ---
     },
     
     // --- This function runs during loading (for progress bars)
