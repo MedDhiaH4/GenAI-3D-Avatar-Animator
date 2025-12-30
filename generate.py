@@ -5,7 +5,6 @@ from models.vqvae_sep import VQVAE_SEP
 import models.t2m_trans as trans
 import models.t2m_trans_uplow as trans_uplow
 import numpy as np
-from exit.utils import visualize_2motions
 import options.option_transformer as option_trans
 import os
 
@@ -298,9 +297,5 @@ if __name__ == '__main__':
     np.save(os.path.join(args.out_dir, "results.npy"), clean_motion.detach().cpu().numpy())
     print(f"SAVED CLEAN MOTION ({args.length} frames) TO: {os.path.join(args.out_dir, 'results.npy')}")
 
-    std = np.load('./exit/t2m-std.npy')
-    mean = np.load('./exit/t2m-mean.npy')
-    file_name = '_'.join(args.text.split(' '))+'_'+str(args.length)
-    visualize_2motions(pred_pose[0].detach().cpu().numpy(), std, mean, 't2m', args.length, save_path='./output/'+file_name+'.html')
 
 
