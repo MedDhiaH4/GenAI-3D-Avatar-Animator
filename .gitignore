@@ -1,0 +1,15 @@
+# --- HEAVY FOLDERS ---
+dataset/
+checkpoints/
+body_models/
+output/
+
+# --- GENERATED FILES ---
+outputs/*
+!outputs/.gitkeep
+
+# --- SYSTEM FILES ---
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
