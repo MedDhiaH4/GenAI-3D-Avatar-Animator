@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AI Avatar (Bright Lighting + Perfect Combo)</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #202020; }
+        #info {
+            position: absolute; top: 10px; width: 100%; text-align: center;
+            color: white; font-family: sans-serif; font-weight: bold; pointer-events: none;
+            text-shadow: 1px 1px 2px black;
+            background: rgba(0,0,0,0.5); padding: 5px;
+        }
+    </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="info">Loading...</div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+        // --- 1. SETUP ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x202020);
+        scene.add(new THREE.GridHelper(20, 20, 0x444444, 0x222222));
+        scene.add(new THREE.AxesHelper(2));
+
+        // --- LIGHTING RESTORED (Bright & Clear) ---
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 2.0);
+        hemiLight.position.set(0, 20, 0);
+        scene.add(hemiLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        dirLight.position.set(3, 10, 10);
+        dirLight.castShadow = true;
+        scene.add(dirLight);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 1.5, 4);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, 1, 0);
+        controls.update();
+
+        // --- 2. CONFIG ---
+        const JOINTS = {
+            ROOT: 0,
+            L_HIP: 1, R_HIP: 2,
+            L_KNEE: 4, R_KNEE: 5,
+            L_FOOT: 7, R_FOOT: 8,
+            SPINE: 3, NECK: 12, HEAD: 15,
+            L_SHOULDER: 16, R_SHOULDER: 17,
+            L_ELBOW: 18, R_ELBOW: 19,
+            L_WRIST: 20, R_WRIST: 21
+        };
+
+        const bones = {}; 
+        const boneAxes = {}; // Auto-detected axes storage
+        
+        let motionFrames = [];
+        let totalFrames = 0;
+        let currentFrame = 0;
+        let lastTime = 0;
+        const FPS = 20; 
+        const interval = 1000 / FPS;
+
+        // --- 3. LOAD ASSETS ---
+        const loader = new GLTFLoader();
+        Promise.all([
+            loader.loadAsync('./avatar.glb'),
+            fetch('../outputs/motion.json?v=' + Date.now()).then(res => res.json())
+        ]).then(([glb, motionJson]) => {
+            
+            const avatar = glb.scene;
+            avatar.traverse((node) => {
+                if (node.isMesh) node.castShadow = true; // Shadows on
+            });
+            scene.add(avatar);
+            
+            avatar.traverse(c => { if (c.isBone) bones[c.name] = c; });
+
+            // --- A. ARMS: AUTO-DETECT ---
+            detectAxis("LeftArm", "LeftForeArm");
+            detectAxis("LeftForeArm", "LeftHand");
+            detectAxis("RightArm", "RightForeArm");
+            detectAxis("RightForeArm", "RightHand");
+
+            // --- B. SPINE: Hardcoded Up ---
+            const UP = new THREE.Vector3(0, 1, 0);
+            boneAxes["Spine"] = UP;
+            boneAxes["Spine1"] = UP;
+            boneAxes["Neck"] = UP;
+
+            // Setup Motion
+            motionFrames = motionJson.frames;
+            totalFrames = motionJson.total_frames;
+            
+            document.getElementById('info').innerText = "Playing (Bright Light)";
+            animate(0);
+        });
+
+        function detectAxis(parentName, childName) {
+            const p = bones[parentName];
+            const c = bones[childName];
+            if (!p || !c) return;
+            const axis = c.position.clone().normalize();
+            if (Math.abs(axis.x) > 0.9) axis.set(Math.sign(axis.x), 0, 0);
+            else if (Math.abs(axis.y) > 0.9) axis.set(0, Math.sign(axis.y), 0);
+            else if (Math.abs(axis.z) > 0.9) axis.set(0, 0, Math.sign(axis.z));
+            boneAxes[parentName] = axis;
+        }
+
+        // --- 4. ANIMATION LOOP ---
+        function animate(time) {
+            requestAnimationFrame(animate);
+
+            if (time - lastTime > interval && motionFrames.length > 0) {
+                lastTime = time;
+                
+                const pose = motionFrames[currentFrame];
+                applyRetargeting(pose); 
+
+                currentFrame = (currentFrame + 1) % totalFrames;
+            }
+            renderer.render(scene, camera);
+        }
+
+        // --- 5. RETARGETING ENGINE ---
+        function applyRetargeting(pose) {
+            const getVec = (idx) => new THREE.Vector3(pose[idx][0], pose[idx][1], pose[idx][2]);
+
+            // 1. ROOT
+            if (bones.Hips) bones.Hips.position.copy(getVec(JOINTS.ROOT));
+
+            // 2. LEGS -> Use SPECIAL SOLVER (Fixes Flipping)
+            alignLeg("LeftUpLeg",  getVec(JOINTS.L_HIP), getVec(JOINTS.L_KNEE));
+            alignLeg("RightUpLeg", getVec(JOINTS.R_HIP), getVec(JOINTS.R_KNEE));
+            alignLeg("LeftLeg",    getVec(JOINTS.L_KNEE), getVec(JOINTS.L_FOOT));
+            alignLeg("RightLeg",   getVec(JOINTS.R_KNEE), getVec(JOINTS.R_FOOT));
+
+            // 3. SPINE -> Use Standard Alignment
+            alignBone("Spine",      getVec(JOINTS.ROOT), getVec(JOINTS.SPINE));
+            alignBone("Spine1",     getVec(JOINTS.SPINE), getVec(JOINTS.NECK));
+            alignBone("Neck",       getVec(JOINTS.NECK), getVec(JOINTS.HEAD));
+
+            // 4. ARMS -> Use Standard Alignment + Auto-Detected Axes
+            alignBone("LeftArm",     getVec(JOINTS.NECK), getVec(JOINTS.L_ELBOW));
+            alignBone("LeftForeArm", getVec(JOINTS.L_ELBOW), getVec(JOINTS.L_WRIST));
+
+            alignBone("RightArm",    getVec(JOINTS.NECK), getVec(JOINTS.R_ELBOW));
+            alignBone("RightForeArm", getVec(JOINTS.R_ELBOW), getVec(JOINTS.R_WRIST));
+        }
+
+        // --- SPECIAL LEG SOLVER ---
+        function alignLeg(boneName, startPos, endPos) {
+            const bone = bones[boneName];
+            if (!bone) return;
+
+            const targetY = new THREE.Vector3().subVectors(endPos, startPos).normalize();
+
+            // Singularity Fix
+            if (Math.abs(targetY.dot(new THREE.Vector3(0,1,0))) > 0.99) {
+                targetY.z += 0.01;
+                targetY.normalize();
+            }
+
+            const forward = new THREE.Vector3(0, 0, 1); 
+            const targetX = new THREE.Vector3().crossVectors(targetY, forward).normalize(); 
+            const targetZ = new THREE.Vector3().crossVectors(targetX, targetY).normalize(); 
+
+            const targetRot = new THREE.Matrix4().makeBasis(targetX, targetY, targetZ);
+            const worldQuat = new THREE.Quaternion().setFromRotationMatrix(targetRot);
+
+            const parentQuat = new THREE.Quaternion();
+            if (bone.parent) bone.parent.getWorldQuaternion(parentQuat);
+            bone.quaternion.copy(parentQuat.invert().multiply(worldQuat));
+        }
+
+        // --- STANDARD SOLVER ---
+        function alignBone(boneName, startPos, endPos) {
+            const bone = bones[boneName];
+            const axis = boneAxes[boneName]; 
+            if (!bone || !axis) return;
+
+            const targetDir = new THREE.Vector3().subVectors(endPos, startPos).normalize();
+            
+            const parentQuat = new THREE.Quaternion();
+            if (bone.parent) bone.parent.getWorldQuaternion(parentQuat);
+            const localTargetDir = targetDir.clone().applyQuaternion(parentQuat.invert());
+
+            const rotation = new THREE.Quaternion().setFromUnitVectors(axis, localTargetDir);
+            bone.quaternion.copy(rotation);
+        }
+    </script>
+</body>
+</html>
